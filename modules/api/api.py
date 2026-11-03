@@ -145,6 +145,12 @@ def api_middleware(app: FastAPI):
     except Exception:
         pass
 
+    # The gradio server is already running when this is called, so a request arriving
+    # early (e.g. a browser tab reconnecting) builds the middleware stack and any later
+    # add_middleware() raises "Cannot add middleware after an application has started".
+    # Reset the stack before adding, exactly like initialize_util.setup_middleware does.
+    app.middleware_stack = None
+
     @app.middleware("http")
     async def log_and_time(req: Request, call_next):
         ts = time.time()
@@ -181,6 +187,8 @@ def api_middleware(app: FastAPI):
                 errors.report(message, exc_info=True)
         return JSONResponse(status_code=vars(e).get('status_code', 500), content=jsonable_encoder(err))
 
+    app.middleware_stack = None
+
     @app.middleware("http")
     async def exception_handling(request: Request, call_next):
         try:
@@ -195,6 +203,8 @@ def api_middleware(app: FastAPI):
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, e: HTTPException):
         return handle_exception(request, e)
+
+    app.build_middleware_stack()  # rebuild middleware stack on-the-fly
 
 
 class Api:
